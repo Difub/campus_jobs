@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>КампусРабота – Вакансии</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">КампусРабота</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h1 class="mb-4">Актуальные вакансии</h1>
+
+        <!-- Фильтры -->
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <input type="text" id="searchInput" class="form-control" placeholder="Поиск по названию...">
+            </div>
+            <div class="col-md-3">
+                <select id="typeFilter" class="form-select">
+                    <option value="">Все типы</option>
+                    <option value="internship">Стажировка</option>
+                    <option value="part-time">Подработка</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-outline-primary w-100" onclick="loadVacancies()">Найти</button>
+            </div>
+        </div>
+
+        <!-- Список вакансий -->
+        <div id="vacancyList" class="row g-3">
+            <!-- Динамически заполняется -->
+        </div>
+    </div>
+
+    <!-- Форма подачи заявки (модальное окно) -->
+    <div class="modal fade" id="applyModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Подать заявку</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="applyForm">
+                        <input type="hidden" id="applyVacancyId">
+                        <div class="mb-3">
+                            <label for="resumeText" class="form-label">Текст резюме</label>
+                            <textarea class="form-control" id="resumeText" rows="4" required></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="coverLetterText" class="form-label">Сопроводительное письмо</label>
+                            <textarea class="form-control" id="coverLetterText" rows="4" required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Отправить</button>
+                    </form>
+                    <div id="applyMessage" class="mt-2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/script.js"></script>
+</body>
+</html>
