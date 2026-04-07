@@ -154,7 +154,80 @@ def create_vacancy(
         employer_name=employer.company_name
     )
 
+# ----------------------------------------------------------------------
+# Заявки студентов
+# ----------------------------------------------------------------------
 
+@app.post("/applications", response_model=ApplicationOut)
+def create_application(
+    app: ApplicationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Подача заявки на вакансию. Доступно только студентам.
+    Создаёт резюме, сопроводительное письмо и саму заявку.
+    """
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Only students can apply")
+    student = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not student:
+        raise HTTPException(status_code=400, detail="Student profile not found")
+
+    application = crud.apply_for_vacancy(db, app, student.id)
+    if not application:
+        raise HTTPException(status_code=400, detail="Already applied or error")
+
+    vac = db.query(Vacancy).filter(Vacancy.id == application.vacancy_id).first()
+    return ApplicationOut(
+        id=application.id,
+        vacancy_id=application.vacancy_id,
+        student_id=application.student_id,
+        resume_id=application.resume_id,
+        cover_letter_id=application.cover_letter_id,
+        status=application.status,
+        applied_at=application.applied_at,
+        vacancy_title=vac.title if vac else None
+    )
+
+
+# ----------------------------------------------------------------------
+# Эндпоинты для личного кабинета работодателя
+# ----------------------------------------------------------------------
+
+@app.get("/users/me", response_model=UserOut)
+def read_current_user(current_user: User = Depends(get_current_user)):
+    """
+    Возвращает информацию о текущем авторизованном пользователе.
+    """
+    return current_user
+
+
+@app.get("/employers/me/vacancies", response_model=list[VacancyOut])
+def get_my_vacancies(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Список вакансий, созданных текущим работодателем.
+    """
+    if current_user.role != "employer":
+        raise HTTPException(status_code=403, detail="Only employers can access this")
+    employer = db.query(Employer).filter(Employer.user_id == current_user.id).first()
+    if not employer:
+        raise HTTPException(status_code=404, detail="Employer profile not found")
+    vacancies = db.query(Vacancy).filter(Vacancy.employer_id == employer.id).all()
+    result = []
+    for v in vacancies:
+        result.append(VacancyOut(
+            id=v.id, employer_id=v.employer_id,
+            title=v.title, description=v.description,
+            department=v.department, location=v.location,
+            type=v.type, deadline=v.deadline, is_active=v.is_active,
+            created_at=v.created_at,
+            employer_name=employer.company_name
+        ))
+    return result
 
 # эндпоинт – отдаёт главную страницу (фронтенд)
 

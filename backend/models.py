@@ -64,6 +64,17 @@ class Vacancy(Base):
     applications = relationship("Application", back_populates="vacancy")
 
 
+class Resume(Base):
+    __tablename__ = "resumes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.id"))
+    content = Column(Text, nullable=False)  # храним текстовое резюме
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    student = relationship("Student", back_populates="resumes")
+    applications = relationship("Application", back_populates="resume")
+
 
 class CoverLetter(Base):
     __tablename__ = "cover_letters"
@@ -93,3 +104,37 @@ class Application(Base):
     cover_letter = relationship("CoverLetter", back_populates="application")
     interviews = relationship("Interview", back_populates="application")
 
+
+class Interview(Base):
+    __tablename__ = "interviews"
+
+    id = Column(Integer, primary_key=True, index=True)
+    application_id = Column(Integer, ForeignKey("applications.id"))
+    scheduled_time = Column(DateTime, nullable=False)
+    location = Column(String)
+    notes = Column(Text)
+    status = Column(String, default="scheduled")  # scheduled, completed, cancelled
+
+    application = relationship("Application", back_populates="interviews")
+
+
+class Review(Base):
+    __tablename__ = "reviews"  # отзыв работодателя о студенте
+
+    id = Column(Integer, primary_key=True, index=True)
+    employer_id = Column(Integer, ForeignKey("employers.id"))
+    student_id = Column(Integer, ForeignKey("students.id"))
+    rating = Column(Integer, nullable=False)  # 1-5
+    comment = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class StudentReview(Base):
+    __tablename__ = "student_reviews"  # отзыв студента о работодателе/стажировке
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.id"))
+    employer_id = Column(Integer, ForeignKey("employers.id"))
+    rating = Column(Integer, nullable=False)
+    comment = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
