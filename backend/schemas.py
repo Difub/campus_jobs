@@ -41,6 +41,22 @@ class EmployerOut(EmployerCreate):
     id: int
     user_id: int
 
+# ---------- Vacancy ----------
+class VacancyCreate(BaseModel):
+    title: str
+    description: str
+    department: Optional[str] = None
+    location: Optional[str] = None
+    type: str  # internship, part-time
+    deadline: Optional[date] = None
+    is_active: Optional[bool] = True
+
+class VacancyOut(VacancyCreate):
+    id: int
+    employer_id: int
+    created_at: datetime
+    employer_name: Optional[str] = None  # добавим для удобства
+    class Config: from_attributes=True
 
 # ---------- Resume ----------
 class ResumeCreate(BaseModel):
@@ -74,3 +90,13 @@ class ApplicationOut(BaseModel):
     vacancy_title: Optional[str] = None
     class Config: from_attributes=True
 
+# ---------- Interview (упрощённо) ----------
+class InterviewCreate(BaseModel):
+    application_id: int
+    scheduled_time: datetime
+    location: Optional[str] = None
+    notes: Optional[str] = None
+
+class InterviewOut(InterviewCreate):
+    id: int
+    status: str

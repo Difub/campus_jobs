@@ -1,3 +1,6 @@
+# main.py — точка входа сервиса поиска работы/стажировок
+# Запускает FastAPI-сервер, настраивает CORS, монтирует статику и предоставляет REST API.
+
 import os
 from pathlib import Path
 from typing import Optional
@@ -10,11 +13,12 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 import uvicorn
 
+# Наши собственные модули
 from .database import engine, Base, SessionLocal
-from .models import * # все ORM-модели (User, Student, Employer, Vacancy, Application, ...)
-from .schemas import * # Pydantic-схемы для валидации запросов/ответов
-from . import crud # функции для работы с БД (создание, чтение, обновление)
-from .auth import * # утилиты аутентификации: хеширование, токены, get_current_user
+from .models import *            # все ORM-модели (User, Student, Employer, Vacancy, Application, ...)
+from .schemas import *           # Pydantic-схемы для валидации запросов/ответов
+from . import crud               # функции для работы с БД (создание, чтение, обновление)
+from .auth import *              # утилиты аутентификации: хеширование, токены, get_current_user
 
 # ----------------------------------------------------------------------
 # Создание таблиц в БД (если их ещё нет)
@@ -154,6 +158,7 @@ def create_vacancy(
         employer_name=employer.company_name
     )
 
+
 # ----------------------------------------------------------------------
 # Заявки студентов
 # ----------------------------------------------------------------------
@@ -189,6 +194,55 @@ def create_application(
         applied_at=application.applied_at,
         vacancy_title=vac.title if vac else None
     )
+
+
+@app.get("/students/me/applications", response_model=list[ApplicationOut])
+def my_applications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Получение всех заявок текущего студента.
+    """
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Not a student")
+    student = db.query(Student).filter(Student.user_id == current_user.id).first()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student profile not found")
+    apps = crud.get_student_applications(db, student.id)
+    result = []
+    for a in apps:
+        vac = db.query(Vacancy).filter(Vacancy.id == a.vacancy_id).first()
+        result.append(ApplicationOut(
+            id=a.id, vacancy_id=a.vacancy_id,
+            student_id=a.student_id, resume_id=a.resume_id,
+            cover_letter_id=a.cover_letter_id, status=a.status,
+            applied_at=a.applied_at,
+            vacancy_title=vac.title if vac else None
+        ))
+    return result
+
+
+@app.patch("/applications/{app_id}/status")
+def update_app_status(
+    app_id: int,
+    new_status: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Изменение статуса заявки (например, «принято»/«отклонено»).
+    Доступно только работодателю, владеющему соответствующей вакансией.
+    """
+    if current_user.role != "employer":
+        raise HTTPException(status_code=403, detail="Only employers can update application status")
+    employer = db.query(Employer).filter(Employer.user_id == current_user.id).first()
+    if not employer:
+        raise HTTPException(status_code=404, detail="Employer not found")
+    app = crud.update_application_status(db, app_id, new_status, employer.id)
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found or access denied")
+    return {"detail": f"Status updated to {new_status}"}
 
 
 # ----------------------------------------------------------------------
@@ -229,7 +283,84 @@ def get_my_vacancies(
         ))
     return result
 
-# эндпоинт – отдаёт главную страницу (фронтенд)
+
+@app.get("/employers/me/vacancies/{vacancy_id}/applications", response_model=list[ApplicationOut])
+def get_applications_for_vacancy(
+    vacancy_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Получение всех заявок на конкретную вакансию работодателя.
+    """
+    if current_user.role != "employer":
+        raise HTTPException(status_code=403, detail="Only employers can access this")
+    employer = db.query(Employer).filter(Employer.user_id == current_user.id).first()
+    if not employer:
+        raise HTTPException(status_code=404, detail="Employer profile not found")
+    # Проверяем, что вакансия принадлежит этому работодателю
+    vacancy = db.query(Vacancy).filter(
+        Vacancy.id == vacancy_id,
+        Vacancy.employer_id == employer.id
+    ).first()
+    if not vacancy:
+        raise HTTPException(status_code=404, detail="Vacancy not found or not yours")
+    applications = db.query(Application).filter(Application.vacancy_id == vacancy_id).all()
+    result = []
+    for a in applications:
+        result.append(ApplicationOut(
+            id=a.id, vacancy_id=a.vacancy_id,
+            student_id=a.student_id, resume_id=a.resume_id,
+            cover_letter_id=a.cover_letter_id, status=a.status,
+            applied_at=a.applied_at,
+            vacancy_title=vacancy.title
+        ))
+    return result
+
+
+@app.get("/applications/{app_id}/details")
+def get_application_detail(
+    app_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Детальный просмотр заявки, включая текст резюме и сопроводительного письма.
+    Доступно: работодателю-владельцу вакансии или самому студенту-соискателю.
+    """
+    details = crud.get_application_details(db, app_id)
+    if not details:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    app = details["application"]
+    # Проверка прав
+    if current_user.role == "employer":
+        employer = db.query(Employer).filter(Employer.user_id == current_user.id).first()
+        vacancy = db.query(Vacancy).filter(Vacancy.id == app.vacancy_id).first()
+        if not employer or vacancy.employer_id != employer.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    elif current_user.role == "student":
+        student = db.query(Student).filter(Student.user_id == current_user.id).first()
+        if not student or app.student_id != student.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+    else:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    # Собираем ответ с дополнительной информацией
+    student = db.query(Student).filter(Student.id == app.student_id).first()
+    return {
+        "id": app.id,
+        "status": app.status,
+        "vacancy_title": app.vacancy.title if app.vacancy else "",
+        "resume_text": details["resume"].content,
+        "cover_letter_text": details["cover_letter"].content,
+        "student_name": f"{student.first_name} {student.last_name}"
+    }
+
+
+# ----------------------------------------------------------------------
+# Корневой эндпоинт – отдаёт главную страницу (фронтенд)
+# ----------------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
