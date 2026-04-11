@@ -125,3 +125,149 @@ def test_apply_missing_field():
     assert resp.status_code == 422  # Unprocessable Entity
 
 
+# 5. Просмотр своих заявок студентом
+def test_get_my_applications():
+    emp_token = register_and_login_employer()
+    stud_token = register_and_login_student()
+
+    # Создаём вакансию и подаём заявку
+    vac_resp = client.post("/vacancies", json={
+        "title": "Lab", "description": "...", "type": "part-time"
+    }, headers={"Authorization": f"Bearer {emp_token}"})
+    vac_id = vac_resp.json()["id"]
+    client.post("/applications", json={
+        "vacancy_id": vac_id,
+        "resume_content": "resume",
+        "cover_letter_content": "cl"
+    }, headers={"Authorization": f"Bearer {stud_token}"})
+
+    # Студент получает свои заявки
+    resp = client.get("/students/me/applications",
+                      headers={"Authorization": f"Bearer {stud_token}"})
+    assert resp.status_code == 200
+    apps = resp.json()
+    assert len(apps) == 1
+    assert apps[0]["vacancy_id"] == vac_id
+
+
+# 6. Попытка подать заявку от работодателя (запрет доступа)
+def test_apply_as_employer_fails():
+    emp_token = register_and_login_employer()
+    # Создаём вакансию
+    vac_resp = client.post("/vacancies", json={
+        "title": "Job", "description": "...", "type": "part-time"
+    }, headers={"Authorization": f"Bearer {emp_token}"})
+    vac_id = vac_resp.json()["id"]
+
+    # Пытаемся подать заявку от имени работодателя
+    resp = client.post("/applications", json={
+        "vacancy_id": vac_id,
+        "resume_content": "x",
+        "cover_letter_content": "y"
+    }, headers={"Authorization": f"Bearer {emp_token}"})
+    assert resp.status_code == 403
+
+
+# 7. Запрет дублирующейся заявки
+def test_duplicate_application():
+    emp_token = register_and_login_employer()
+    stud_token = register_and_login_student()
+
+    vac_resp = client.post("/vacancies", json={
+        "title": "Job", "description": "...", "type": "part-time"
+    }, headers={"Authorization": f"Bearer {emp_token}"})
+    vac_id = vac_resp.json()["id"]
+
+    payload = {
+        "vacancy_id": vac_id,
+        "resume_content": "A",
+        "cover_letter_content": "B"
+    }
+    # Первая попытка – успех
+    resp1 = client.post("/applications", json=payload,
+                        headers={"Authorization": f"Bearer {stud_token}"})
+    assert resp1.status_code == 200
+
+    # Вторая попытка – дубликат
+    resp2 = client.post("/applications", json=payload,
+                        headers={"Authorization": f"Bearer {stud_token}"})
+    assert resp2.status_code == 400
+    assert resp2.json()["detail"] == "Already applied or error"
+
+
+# 8. Обновление статуса заявки работодателем (принять)
+def test_update_application_status():
+    emp_token = register_and_login_employer()
+    stud_token = register_and_login_student()
+
+    # Создаём вакансию и подаём заявку
+    vac_resp = client.post("/vacancies", json={
+        "title": "QA", "description": "...", "type": "part-time"
+    }, headers={"Authorization": f"Bearer {emp_token}"})
+    vac_id = vac_resp.json()["id"]
+    app_resp = client.post("/applications", json={
+        "vacancy_id": vac_id,
+        "resume_content": "CV",
+        "cover_letter_content": "CL"
+    }, headers={"Authorization": f"Bearer {stud_token}"})
+    app_id = app_resp.json()["id"]
+
+    # Работодатель меняет статус на "accepted"
+    patch_resp = client.patch(
+        f"/applications/{app_id}/status?new_status=accepted",
+        headers={"Authorization": f"Bearer {emp_token}"}
+    )
+    assert patch_resp.status_code == 200
+
+    # Студент проверяет статус
+    apps_resp = client.get("/students/me/applications",
+                           headers={"Authorization": f"Bearer {stud_token}"})
+    assert apps_resp.json()[0]["status"] == "accepted"
+
+
+# 9. Получение своих вакансий работодателем
+def test_employer_get_my_vacancies():
+    token = register_and_login_employer()
+    # Создаём две вакансии
+    client.post("/vacancies", json={
+        "title": "V1", "description": "...", "type": "internship"
+    }, headers={"Authorization": f"Bearer {token}"})
+    client.post("/vacancies", json={
+        "title": "V2", "description": "...", "type": "part-time"
+    }, headers={"Authorization": f"Bearer {token}"})
+
+    resp = client.get("/employers/me/vacancies",
+                      headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    titles = [v["title"] for v in data]
+    assert "V1" in titles and "V2" in titles
+
+
+# 10. Просмотр заявок на вакансию работодателем
+def test_employer_get_applications_for_vacancy():
+    emp_token = register_and_login_employer()
+    stud_token = register_and_login_student(email="stud2@test.com")
+
+    # Создаём вакансию
+    vac_resp = client.post("/vacancies", json={
+        "title": "Designer", "description": "...", "type": "internship"
+    }, headers={"Authorization": f"Bearer {emp_token}"})
+    vac_id = vac_resp.json()["id"]
+
+    # Студент подаёт заявку
+    client.post("/applications", json={
+        "vacancy_id": vac_id,
+        "resume_content": "resume",
+        "cover_letter_content": "cover"
+    }, headers={"Authorization": f"Bearer {stud_token}"})
+
+    # Работодатель получает заявки на эту вакансию
+    resp = client.get(f"/employers/me/vacancies/{vac_id}/applications",
+                      headers={"Authorization": f"Bearer {emp_token}"})
+    assert resp.status_code == 200
+    apps = resp.json()
+    assert len(apps) == 1
+    assert apps[0]["vacancy_id"] == vac_id
+    assert apps[0]["status"] == "pending"
